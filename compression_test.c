@@ -38,6 +38,10 @@
 #define BUFFER_SIZE 24
 #define TOKEN_INIT 0
 #define NIBBLE_MAX 0xF
+#define NIBBLE_NON_MATCH_BIT 0x8
+#define NIBBLE_VALUE_MASK 0x7
+
+typedef uint8_t buffer_element_t;
 
 typedef union
 {
@@ -49,25 +53,19 @@ typedef union
   };
 } cmprss_token_t;
 
-struct match_result_struct
+cmprss_token_t getMatchLen(buffer_element_t *data_ptr, uint8_t i)
 {
-  uint8_t matched_len;
-  uint8_t non_matched_len;
-};
-
-uint8_t getMatchLen(uint8_t *data_ptr, uint8_t i)
-{
-  match_result_struct result;
-  result.matched_len = 0;
-  result.non_matched_len = 0;
+  cmprss_token_t token1;
+  token1.before = 0;
+  token1.after = 0;
 
   if (data_ptr[i] == data_ptr[i + 1])
   {
     // find the number of consecutive matches after the currVal
-    for (j = 2; j < NIBBLE_MAX; j++)
+    for (uint8_t j = 1; j < NIBBLE_NON_MATCH_BIT; j++)
     {
       if (data_ptr[i] == data_ptr[i + j])
-        result.matched_len++;
+        token1.after++;
       else
       {
         break;
@@ -76,22 +74,21 @@ uint8_t getMatchLen(uint8_t *data_ptr, uint8_t i)
   }
   else
   {
-    //find the number of consecutive non-matches after the currVal
-    for (j = 2; j < NIBBLE_MAX; j++)
+    // we should skip the first match, so we start at 2, since we don't what to include the final value in the case of a non-match length
+    // find the number of consecutive non-matches after the currVal
+    for (uint8_t j = 2; j < NIBBLE_NON_MATCH_BIT; j++)
     {
-      if (data_ptr[i+(j-1)] == data_ptr[i + j])
+      if (data_ptr[i + (j - 1)] == data_ptr[i + j])
         break;
       else
       {
-        result.non_matched_len++;
+        token1.after++;
+        token1.after = token1.after | NIBBLE_NON_MATCH_BIT;
       }
     }
   }
 
-
-  
-
-  return result;
+  return token1;
 }
 
 /**
@@ -101,7 +98,7 @@ uint8_t getMatchLen(uint8_t *data_ptr, uint8_t i)
  * @param data_size
  * @return int
  */
-int byte_compress(uint8_t *data_ptr, uint64_t data_size)
+int byte_compress(buffer_element_t *data_ptr, uint64_t data_size)
 {
   uint64_t size_after_compression = 0;
   uint64_t i = 0, j = 0;
@@ -110,49 +107,60 @@ int byte_compress(uint8_t *data_ptr, uint64_t data_size)
   cmprss_token_t token1;
   token1.before = NIBBLE_MAX;
   token1.after = NIBBLE_MAX;
-  uint8_t buffer[16] = {0xFF};
+  buffer_element_t buffer = 0xFF;
 
   {
-    uint8_t match_len = 0;
     do
     {
-      currVal = data_ptr[i];
-      // find the number of consecutive matches after the currVal
-      for (j = 0; j < NIBBLE_MAX; j++)
-      {
-        if (currVal == data_ptr[i + j])
-          match_len++;
-        else
-        {
-          non_match++;
-        }
-      }
-      token1.before = match_len;
 
-      // grab the next value, and increment i
-      currVal = data_ptr[++i];
+      if (i >= data_size)
+        break;
 
-      // find the number of consecutive matches after the currVal
-      for (j = 0; j < NIBBLE_MAX; j++)
+      // get 2x consecutive sets of match/non-match sequences and set them as the lengths in the token along with their match bits
+      token1.before = getMatchLen(data_ptr, i).after;
+      token1.after = getMatchLen(data_ptr, i + (token1.before & NIBBLE_VALUE_MASK)).after;
+
+      // WARNING inserting a token will increase the size not reduce it
+      if (((token1.before & NIBBLE_NON_MATCH_BIT) != 0) &&
+          ((token1.after & NIBBLE_NON_MATCH_BIT) != 0) &&
+          (writeIndex > i - 1))
       {
-        if (data_ptr[i] == data_ptr[i + j])
-          after_match_len++;
+        // this failure mode may have corrupted the data due to the incomplete conversion
+        // TODO create recovery method? or way to continue compressing? Perhaps make a buffer and shuffle all remaining bits outwards...
+        size_after_compression = writeIndex;
+        break;
       }
-      token1.after = after_match_len;
+
+      if ((token1.before & NIBBLE_NON_MATCH_BIT) != 0)
+      {
+        writeIndex = writeIndex + (token1.before & NIBBLE_VALUE_MASK);
+        // save the value from the space to be used by the token
+        buffer = data_ptr[writeIndex];
+      }
+      else
+      {
+        writeIndex = i + 1;
+
+        // no save required as value is matched to the previous one and can be ignored
+      }
 
       // insert the token
-      data_ptr[i] = token1.byte;
+      data_ptr[i + (token1.before & NIBBLE_VALUE_MASK)] = (buffer_element_t)token1.byte;
 
-      // grab the next value, and increment i
-      nextVal = data_ptr[++i];
+      if ((token1.after & NIBBLE_NON_MATCH_BIT) != 0)
+      {
+        writeIndex = writeIndex + (token1.after & NIBBLE_VALUE_MASK);
+      }
+      else
+      {
+        writeIndex = i + 1;
+      }
 
-      if (currVal != nextVal)
-
-        // save and go to the next unmatched index
-        prev_i = i;
-      i = i + after_match_len;
+      i = i + (token1.before & NIBBLE_NON_MATCH_BIT) + 1 + (token1.after & NIBBLE_NON_MATCH_BIT);
+      buffer = 0xFF;
     } while (i < data_size);
   }
+  size_after_compression = writeIndex;
 
   return size_after_compression;
 }
@@ -194,6 +202,8 @@ void main(void)
   main_cmprss_size = byte_compress(data_ptr, main_data_size);
   end_time = clock();
 
+  // TODO write 0xFF to all bytes larger than the post-compression size?
+
   // check that clock ticks are indeed seconds
   assert(CLOCKS_PER_SEC == 1000);
   // Calculate the time difference in milliseconds
@@ -211,6 +221,8 @@ void main(void)
 
   printf("Size decompressed: %d\n", main_cmprss_size);
   printf("Decompress Time Taken: %dms\n", time_taken);
+
+  // TODO print compressed array
 
   return;
 }
