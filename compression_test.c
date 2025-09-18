@@ -49,6 +49,51 @@ typedef union
   };
 } cmprss_token_t;
 
+struct match_result_struct
+{
+  uint8_t matched_len;
+  uint8_t non_matched_len;
+};
+
+uint8_t getMatchLen(uint8_t *data_ptr, uint8_t i)
+{
+  match_result_struct result;
+  result.matched_len = 0;
+  result.non_matched_len = 0;
+
+  if (data_ptr[i] == data_ptr[i + 1])
+  {
+    // find the number of consecutive matches after the currVal
+    for (j = 2; j < NIBBLE_MAX; j++)
+    {
+      if (data_ptr[i] == data_ptr[i + j])
+        result.matched_len++;
+      else
+      {
+        break;
+      }
+    }
+  }
+  else
+  {
+    //find the number of consecutive non-matches after the currVal
+    for (j = 2; j < NIBBLE_MAX; j++)
+    {
+      if (data_ptr[i+(j-1)] == data_ptr[i + j])
+        break;
+      else
+      {
+        result.non_matched_len++;
+      }
+    }
+  }
+
+
+  
+
+  return result;
+}
+
 /**
  * @brief compresses a byte array of data using a custom algorithm
  *
@@ -60,10 +105,12 @@ int byte_compress(uint8_t *data_ptr, uint64_t data_size)
 {
   uint64_t size_after_compression = 0;
   uint64_t i = 0, j = 0;
-  uint8_t prev_i = 0, currVal = 0, nextVal = 0, non_match;
+  uint8_t prev_i = 0, currVal = 0, nextVal = 0, non_match = 0;
+  uint8_t readIndex = 0, writeIndex = 0, buffReadIndex = 0, buffWritePtr = 0;
   cmprss_token_t token1;
   token1.before = NIBBLE_MAX;
   token1.after = NIBBLE_MAX;
+  uint8_t buffer[16] = {0xFF};
 
   {
     uint8_t match_len = 0;
@@ -82,7 +129,7 @@ int byte_compress(uint8_t *data_ptr, uint64_t data_size)
       }
       token1.before = match_len;
 
-      // grab the next value and increment i
+      // grab the next value, and increment i
       currVal = data_ptr[++i];
 
       // find the number of consecutive matches after the currVal
@@ -96,7 +143,7 @@ int byte_compress(uint8_t *data_ptr, uint64_t data_size)
       // insert the token
       data_ptr[i] = token1.byte;
 
-      // grab the next value and increment i
+      // grab the next value, and increment i
       nextVal = data_ptr[++i];
 
       if (currVal != nextVal)
