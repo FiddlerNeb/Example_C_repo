@@ -4,6 +4,7 @@
  * @brief a test compression implementation for technical interview
  * @version 0.1
  * @date 2025-09-15
+ * 
  * Code Design Test: Data Compression Design
  *   Design an algorithm that will compress a given data buffer of bytes.
  *
@@ -42,6 +43,8 @@
 
 #include <assert.h>
 
+
+
 #define INPUT_SIZE 24
 #define BUFFER_SIZE 64
 #define TOKEN_INIT 0
@@ -50,6 +53,8 @@
 #define NIBBLE_VALUE_MASK 0x7
 #define PRINT_ROW_SIZE 8
 #define ERASED_BYTE 0xFF
+
+
 
 typedef uint8_t buffer_element_t;
 typedef uint64_t array_size_t;
@@ -136,6 +141,7 @@ cmprss_token_t getMatchLen(buffer_element_t *data_ptr, array_size_t i)
   return token1;
 }
 
+#define DEBUG 1
 /**
  * @brief compresses a byte array of data using a custom algorithm
  *
@@ -162,28 +168,33 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
     token1.before = getMatchLen(data_ptr, i).after;
     token1.after = getMatchLen(data_ptr, i + (token1.before & NIBBLE_VALUE_MASK)).after;
 
-
+    if ((token1.before == 0) && (token1.after == 0))
+      break;
+  
     //check if we're about to reach the end of the buffer
     if (data_size < (i+(token1.before & NIBBLE_VALUE_MASK)+1+(token1.after & NIBBLE_VALUE_MASK)))
     {
       if (data_ptr[i] == ERASED_BYTE)
         break;
-      else if (eofWriteIndex < BUFFER_SIZE)
+      else if (eofWriteIndex+1 < BUFFER_SIZE)
       {
         //eofBuffer[eofWriteIndex--] = data_ptr[data_size-1];
         memmove(&data_ptr[writeIndex], &data_ptr[i], ((data_size)-(i)));
         
-        // debug
+        #ifdef DEBUG
         print_array(data_ptr, data_size);
-        // end debug
+        #endif
         memmove(&data_ptr[writeIndex+((data_size)-(i))], &eofBuffer[eofWriteIndex+1], BUFFER_SIZE - (eofWriteIndex+1));
-        eofWriteIndex = BUFFER_SIZE;
-
-        memset(&data_ptr[i-1], 0xFF, ((data_size)-(i-1)));
-        i = writeIndex; 
-        // debug
+        
+        #ifdef DEBUG
         print_array(data_ptr, data_size);
-        // end debug
+        #endif
+        memset(&data_ptr[writeIndex+(BUFFER_SIZE - (eofWriteIndex+1))+((data_size)-(i))], 0xFF, ((data_size)-(writeIndex+(BUFFER_SIZE - (eofWriteIndex+1))+((data_size)-(i)))));
+        eofWriteIndex = BUFFER_SIZE;
+        i = writeIndex; 
+        #ifdef DEBUG
+        print_array(data_ptr, data_size);
+        #endif
 
         continue;
       }
@@ -192,14 +203,18 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
     if ((prevToken.after & NIBBLE_NON_MATCH_BIT) != 0)
     {
       //if we start off with a non matched streak, we need to put in a token at the beginning of the file
-      if (((token1.before & NIBBLE_NON_MATCH_BIT) == 0) || 
-          (i == 0))
+      if ((i != 0) && ((token1.before & NIBBLE_NON_MATCH_BIT) == 0) || 
+          (i == 0) && ((token1.before & NIBBLE_NON_MATCH_BIT) != 0))
       {
         //add a token in to indicate the end of the non-matching characters
         token1.after = token1.before;
         token1.before = NIBBLE_NON_MATCH_BIT;
         // save the value from the space to be used by the token
         buffer = data_ptr[writeIndex];
+      }
+      else if (i==0)
+      {
+        //matching bit at the beginning of the array, move on
       }
       else
       {
@@ -210,6 +225,7 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
         continue;
       }
     }
+
     // WARNING inserting a token will increase the size not reduce it
     if (((token1.before & NIBBLE_NON_MATCH_BIT) != 0) &&
         ((token1.after & NIBBLE_NON_MATCH_BIT) != 0) &&
@@ -237,17 +253,17 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
       // save the value from the space to be used by the token
       buffer = data_ptr[writeIndex];
     }
-    // debug
-     print_array(data_ptr, data_size);
-    // end debug
+    #ifdef DEBUG
+    print_array(data_ptr, data_size);
+    #endif
     i = i + (token1.before & NIBBLE_VALUE_MASK);
 
     // insert the token
     data_ptr[writeIndex++] = (buffer_element_t)token1.byte;
 
-    // debug
-     print_array(data_ptr, data_size);
-    // end debug
+    #ifdef DEBUG
+    print_array(data_ptr, data_size);
+    #endif
 
     if (token1.after == 0)
       break;
@@ -260,9 +276,9 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
         {
           memmove(&data_ptr[writeIndex+1], &data_ptr[writeIndex], (token1.after & NIBBLE_VALUE_MASK));
           data_ptr[writeIndex] = buffer;
-          // debug
+          #ifdef DEBUG
           print_array(data_ptr, data_size);
-          // end debug
+          #endif
         }
         else
         {
@@ -270,9 +286,9 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
           eofBuffer[eofWriteIndex--] = data_ptr[data_size-1];
           memmove(&data_ptr[writeIndex+1], &data_ptr[writeIndex], ((data_size-1)-(writeIndex)));
           data_ptr[writeIndex] = buffer;
-          // debug
+          #ifdef DEBUG
           print_array(data_ptr, data_size);
-          // end debug
+          #endif
           i = i + 1;
         }
       }
@@ -286,9 +302,9 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
       data_ptr[writeIndex] = data_ptr[i+1];
       writeIndex = writeIndex + 1;
     }
-    // debug
-     print_array(data_ptr, data_size);
-    // end debug
+    #ifdef DEBUG
+    print_array(data_ptr, data_size);
+    #endif
 
     i = i + (token1.after & NIBBLE_VALUE_MASK);
     buffer = ERASED_BYTE;
@@ -312,6 +328,8 @@ int byte_decompress(buffer_element_t *uncmprss_data_ptr, array_size_t uncmprss_d
   array_size_t size_after_compression = 0;
   array_size_t i = 0;
 
+
+
   return size_after_compression;
 }
 
@@ -323,9 +341,24 @@ void main(void)
 {
   clock_t start_time, end_time;
   uint64_t time_taken = 0.0f;
+  /*
   uint8_t input_data_ptr[INPUT_SIZE] = {0x03, 0x74, 0x04, 0x04, 0x04, 0x35, 0x35, 0x64,
                                          0x64, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00,
                                          0x56, 0x45, 0x56, 0x56, 0x56, 0x09, 0x09, 0x09};
+  */
+  
+  uint8_t input_data_ptr[INPUT_SIZE] = {
+    0xAA, 0xAA, 0xBB, 0xBB, 0xCC, 0xCC, 0xDD, 0xDD,
+    0xEE, 0xEE, 0x11, 0x11, 0x22, 0x22, 0x33, 0x33,
+    0x44, 0x44, 0x66, 0x77, 0x88, 0x99, 0x00, 0x00
+};
+//  correct compression
+/*
+    0xAA, 0x22, 0xBB, 0xCC, 0x22, 0xDD, 0xEE, 0x22,
+    0x11, 0x22, 0x22, 0x33, 0x44, 0x2C, 0x66, 0x77, 
+    0x88, 0x99, 0x82, 0x00
+};
+*/
   // TODO  instead of having the decompressed size known ahead of time, we should use malloc or similar since all we would know is the compressed size
   uint8_t decompressed_data_ptr[INPUT_SIZE] = {0};
   uint64_t main_data_size = INPUT_SIZE;
@@ -334,9 +367,8 @@ void main(void)
 
   printf("\n\nInitialization complete\n");
   printf("Size before: %d\n", main_data_size);
-  // debug
   print_array(input_data_ptr, main_data_size);
-  // end debug
+
 
   start_time = clock();
   main_cmprss_size = byte_compress(input_data_ptr, main_data_size);
@@ -351,9 +383,7 @@ void main(void)
 
   printf("\nSize Compressed: %d\n", main_cmprss_size);
   printf("Compress Time Taken: %dms\n", time_taken);
-  // debug
   print_array(input_data_ptr, main_cmprss_size);
-  // end debug
 
   start_time = clock();
   main_decmprss_size = byte_decompress(input_data_ptr, main_data_size, decompressed_data_ptr, main_cmprss_size);
@@ -364,10 +394,7 @@ void main(void)
 
   printf("\nSize decompressed: %d\n", main_decmprss_size);
   printf("Decompress Time Taken: %dms\n", time_taken);
-
-  // debug
   print_array(decompressed_data_ptr, main_data_size);
-  // end debug
 
   // TODO print compressed array
 
