@@ -25,6 +25,14 @@ Design an algorithm that will compress a given data buffer of bytes.
     data_size = 24;<br>
     new_size = byte_compress( data_ptr, data_size );<br>
 </code>
+@section plan Planning
+<p>
+* use doxygen to document code
+* approach code for unit testing as well as easy reading where possible
+* emphesize embedded context, perhaps balance throughput and compression as if they were requirements?
+* schedule at least 50% of development time for testing & itteration
+</p>
+
  @section CompressionAnswer Compression Algorithm pseudocode
  @subsection General General description
  <p>
@@ -76,6 +84,7 @@ post compression size: 7
 @subsection OverflowHandling Overflow Handling
 <p>
 Since adding tokens to unmatched byte sequences results in a net gain in bytes, we need to add overlow capability to our algorithm to preserve later data in our input array. This overflow capability will unfortunately be cyclically costly as we have to create a gap in the data to insert the tokens.<br>
+**Improvement:** If I had more time, I would pull a buffer out of the beginning of the file first to make room and then proceed with the algorithm as-is.<br>
 **Improvement:** utilize an output memory space, rather than overwritting the input buffer, this could be an input to the function<br>
 **Improvement:** dynamically allocate more memory to the array, but this is typically disabled in embedded applications.<br>
 </p>
@@ -135,3 +144,11 @@ bytes decompressed:
 0x04, 0x05, 0x07, 0x35, 0x35, 0x35<br>
 post compression size: 6
 </code>
+@section improvements Improvements
+<p>
+If I had more time, 
+1. I'd get clearer requirements on the application context, as this would help decide whether throughput, compression, or maintainability should be prioritized.
+2. I'd re-architect the solution to be more modular. The trouble with prioritizing memory and cyclic efficiency is that you sacrifice on maintainability and stability of the code. Planning and testing are the key to maintainable firmware.
+3. I'd use a unit test framework to set up the unit tests so that they're more maintainable and repeatable.
+
+</p>
