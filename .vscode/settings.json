@@ -1,5 +1,7 @@
 {
   "files.associations": {
-    "stdint.h": "c"
+    "*.cla": "c",
+    "stdint.h": "c",
+    "assert.h": "c"
   }
 }
