@@ -3,9 +3,16 @@
 #define COMPRESS_TEST_H
 #include <stdint.h>
 
-
+#define GET_VAR_NAME(x) #x
 
 #define MARKDOWN_OUTPUT 1
+
+typedef enum
+{
+  FAIL = 0,
+  PASS = 1,
+  INVALID = -1,
+} ret_code;
 
 #define MAX_INPUT_SIZE 256
 #define BUFFER_SIZE 16
@@ -30,16 +37,13 @@ typedef union
   };
 } cmprss_token_t;
 
-
-void print_array(uint8_t *data_ptr, array_size_t data_size);
-//cmprss_token_t getMatchLen(buffer_element_t *data_ptr, array_size_t i, array_size_t data_size);
-//int estimate_array_size(buffer_element_t *data_ptr, array_size_t data_size);
-int byte_compress(buffer_element_t *data_ptr, array_size_t data_size);
+void print_array(uint8_t *data_ptr, array_size_t data_size, char *array_name)
+    // cmprss_token_t getMatchLen(buffer_element_t *data_ptr, array_size_t i, array_size_t data_size);
+    // int estimate_array_size(buffer_element_t *data_ptr, array_size_t data_size);
+    int byte_compress(buffer_element_t *data_ptr, array_size_t data_size);
 int run_verbose_compression_test(buffer_element_t *data_ptr, array_size_t data_size);
 uint8_t ArraysAreEqual(buffer_element_t *data_ptr1, buffer_element_t *data_ptr2, array_size_t data_size);
 
 int byte_decompress(buffer_element_t *uncmprss_data_ptr, array_size_t uncmprss_data_size, buffer_element_t *cmprss_data_ptr, array_size_t cmpress_data_size);
 
-
-
-#endif //COMPRESS_TEST_H
+#endif // COMPRESS_TEST_H
