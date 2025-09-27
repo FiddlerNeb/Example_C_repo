@@ -87,6 +87,16 @@ uint8_t regression_test(buffer_element_t *input_data_ptr, array_size_t input_siz
     return 0;
   }
 
+  for (array_size_t i = 0; i < input_size;i++)
+  {
+    if (input_data_ptr[i] > MAX_NON_TOKEN_DATA)
+    {
+      print_array(input_data_ptr, input_size);
+      printf("\ninput array has a >127 value at index %d\n", i);
+      return 0;
+    }
+  }
+
   memcpy(compressed_data_ptr, input_data_ptr, input_size);
   if (!ArraysAreEqual(input_data_ptr, compressed_data_ptr, input_size))
   {
@@ -217,6 +227,10 @@ uint8_t input_data_ptr[INPUT_SIZE] =
  */
 void main(void)
 {
+  //debug
+  regression_test(test_arrays[2], array_sizes[2]);
+  //end debug
+
   //(void)run_verbose_compression_test(input_data_ptr, 63);
   for (uint8_t i = 0;i< NUM_TESTS; i++)
   {
