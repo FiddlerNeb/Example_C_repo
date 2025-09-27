@@ -8,7 +8,7 @@
 #define MARKDOWN_OUTPUT 1
 
 #define MAX_INPUT_SIZE 256
-#define BUFFER_SIZE 64
+#define BUFFER_SIZE 16
 #define TOKEN_INIT 0
 #define NIBBLE_MAX 0xF
 #define NIBBLE_NON_MATCH_BIT 0x8

@@ -116,6 +116,39 @@ int estimate_array_size(buffer_element_t *data_ptr, array_size_t data_size)
   return cmprss_size_est;
 }
 
+uint8_t read_into_buffer(buffer_element_t *buffer0, buffer_element_t *buffer1, array_size_t *buffSwitch, buffer_element_t *data_ptr, array_size_t data_size, array_size_t *readIndex)
+{
+  buffer_element_t *ptrBuff;
+  array_size_t buffIndex = 0, readBytes = 0;
+
+  //opposite than the main function since we want to read into the one we're not writing to
+  if (buffSwitch == 0)
+    ptrBuff = buffer1;
+  else
+    ptrBuff = buffer0;
+
+  if ((readIndex+BUFFER_SIZE) < data_size)
+    readBytes = BUFFER_SIZE;
+  else
+    readBytes = data_size - *readIndex;
+  
+  //read data into next buffer so that we can always overwrite a few bytes in the main array if we need to
+  memmove(&ptrBuff[0], &data_ptr[*readIndex], BUFFER_SIZE);
+  *readIndex += readBytes;
+}
+
+uint8_t copy_buffer_and_swap(buffer_element_t *buffer0, buffer_element_t *buffer1, buffer_element_t* ptrBuff, array_size_t buffSize, array_size_t *buffIndex, array_size_t *buffSwitch, buffer_element_t *data_ptr, array_size_t data_size, array_size_t *writeIndex,, array_size_t *readIndex)
+{
+  //make sure we have space to write the buffer contents
+  if ((*buffIndex < (data_size - *writeIndex)) &&
+      ((*buffIndex < (data_size - *readIndex)))
+  {
+    memmove(&data_ptr[writeIndex], &eofBuffer[eofWriteIndex+1], BUFFER_SIZE - (eofWriteIndex+1));
+          
+  }
+}
+
+
 #define DEBUG 1
 /**
  * @brief compresses a byte array of data using a custom algorithm
@@ -125,6 +158,131 @@ int estimate_array_size(buffer_element_t *data_ptr, array_size_t data_size)
  * @return int
  */
 int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
+{
+  array_size_t size_after_compression = 0;
+  array_size_t readIndex = 0;
+  array_size_t writeIndex = 0, buffIndex = 0, buffSwitch = 0;
+  cmprss_token_t token1, prevToken;
+  token1.before = NIBBLE_MAX;
+  token1.after = NIBBLE_MAX;
+  prevToken.before = NIBBLE_MAX;
+  prevToken.after = NIBBLE_MAX;
+  //buffer_element_t buffer = ERASED_BYTE, buffer2 = ERASED_BYTE;
+  buffer_element_t buffer0[BUFFER_SIZE], buffer1[BUFFER_SIZE];
+  buffer_element_t* ptrBuff = buffer0;
+  memset(buffer0, ERASED_BYTE, BUFFER_SIZE);
+  memset(buffer1, ERASED_BYTE, BUFFER_SIZE);
+  uint64_t itterationCount = data_size*2;
+
+
+  if (estimate_array_size(data_ptr, data_size) >= data_size)
+  {
+    //likely uncompressible via this method, abort
+    return data_size;
+  }
+
+  while ((readIndex < data_size) && (data_ptr[readIndex] != ERASED_BYTE))
+  {
+    //prevent infinite loop
+    itterationCount--;
+    if (itterationCount <=1)
+      break;
+    
+    if (buffSwitch == 0)
+    {
+      ptrBuff = buffer0;
+
+    }
+    else
+    {
+      ptrBuff = buffer1;
+    }
+
+     // get 2x consecutive sets of match/non-match sequences and set them as the lengths in the token along with their match bits
+    token1.before = getMatchLen(data_ptr, readIndex, data_size).after;
+    token1.after = getMatchLen(data_ptr, readIndex + (token1.before & NIBBLE_VALUE_MASK), data_size).after;
+
+    if ((token1.before == 0) && (token1.after == 0))
+      break;
+  
+
+    if ((token1.before & NIBBLE_NON_MATCH_BIT) != 0)
+    {
+      if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
+      {
+        //to go from matched to unmatched on a non-token boundry, we need to fake a match to move the boundry to the correct spot for decoding
+        ptrBuff[buffIndex++] = data_ptr[readIndex++];
+        token1.before = token1.before -1;
+        ptrBuff[buffIndex++] = 0x10 + token1.before;
+      }
+      memmove(&ptrBuff[buffIndex], &data_ptr[readIndex], (token1.before & NIBBLE_VALUE_MASK));
+      buffIndex = buffIndex + (token1.before & NIBBLE_VALUE_MASK);
+      #ifdef DEBUG
+      print_array(ptrBuff, buffIndex);
+      #endif
+      if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
+      {
+        readIndex += (token1.before & NIBBLE_VALUE_MASK);
+        //TODO copy buffer to memory
+        prevToken.byte = 0x10 + token1.before;
+        continue;
+      }
+    }
+    else
+    {
+      // insert the before match value
+      ptrBuff[buffIndex++] = data_ptr[readIndex];
+    }
+    readIndex += (token1.before & NIBBLE_VALUE_MASK);
+
+    #ifdef DEBUG
+    print_array(data_ptr, data_size);
+    #endif
+
+    // insert the token
+    ptrBuff[buffIndex++] = (buffer_element_t)token1.byte;
+
+    //TODO for a smaller buffer, should we copy buffer over here?
+
+    #ifdef DEBUG
+    print_array(data_ptr, data_size);
+    #endif
+
+    //TODO still needed?
+    //if ((token1.after == 0) || (readIndex>(data_size-1)))
+    //  break;
+
+    if ((token1.after & NIBBLE_NON_MATCH_BIT) != 0)
+    {
+      memmove(&ptrBuff[buffIndex], &data_ptr[readIndex], (token1.after & NIBBLE_VALUE_MASK));
+      buffIndex += (token1.after & NIBBLE_VALUE_MASK);
+    }
+    else
+    {
+      // insert the after match value
+      ptrBuff[buffIndex++] = data_ptr[readIndex+1];
+    }
+    #ifdef DEBUG
+    print_array(data_ptr, data_size);
+    #endif
+
+    readIndex = readIndex + (token1.after & NIBBLE_VALUE_MASK);
+
+    
+  } 
+
+  size_after_compression = writeIndex;
+
+  return size_after_compression;
+}
+/**
+ * @brief compresses a byte array of data using a custom algorithm
+ *
+ * @param data_ptr
+ * @param data_size
+ * @return int
+ */
+int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
 {
   array_size_t size_after_compression = 0;
   array_size_t i = 0;
