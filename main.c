@@ -92,7 +92,7 @@ ret_code regression_test(buffer_element_t *input_data_ptr, array_size_t input_si
   {
     if (input_data_ptr[i] > MAX_NON_TOKEN_DATA)
     {
-      print_array(input_data_ptr, input_size);
+      print_array(input_data_ptr, input_size, GET_VAR_NAME(input_data_ptr));
       printf("\ninput array has a >127 value at index %d\n", i);
       return FAIL;
     }
@@ -120,13 +120,13 @@ ret_code regression_test(buffer_element_t *input_data_ptr, array_size_t input_si
 
   if (!ArraysAreEqual(input_data_ptr, decompressed_data_ptr, input_size))
   {
-    print_array(input_data_ptr, input_size);
+    print_array(input_data_ptr, input_size, GET_VAR_NAME(input_data_ptr));
     printf("input size: %d\n", input_size);
-    print_array(compressed_data_ptr, main_cmprss_size);
+    print_array(compressed_data_ptr, main_cmprss_size, GET_VAR_NAME(compressed_data_ptr));
     printf("compressed size: %d\n", main_cmprss_size);
-    print_array(decompressed_data_ptr, main_decmprss_size);
+    print_array(decompressed_data_ptr, main_decmprss_size, GET_VAR_NAME(decompressed_data_ptr));
     printf("decompressed size: %d\n", main_decmprss_size);
-    printf("test fail");
+    printf("test fail\n\n\n");
     return FAIL;
   }
 
@@ -153,7 +153,7 @@ int run_verbose_compression_test(buffer_element_t *data_ptr, array_size_t data_s
 #if MARKDOWN_OUTPUT == 1
   printf("<br>");
 #endif
-  print_array(data_ptr, main_data_size);
+  print_array(data_ptr, main_data_size, GET_VAR_NAME(data_ptr));
 #if MARKDOWN_OUTPUT == 1
   printf("<br>");
 #endif
@@ -177,7 +177,7 @@ int run_verbose_compression_test(buffer_element_t *data_ptr, array_size_t data_s
 #if MARKDOWN_OUTPUT == 1
   printf("<br>");
 #endif
-  print_array(data_ptr, main_cmprss_size);
+  print_array(data_ptr, main_cmprss_size, GET_VAR_NAME(data_ptr));
 #if MARKDOWN_OUTPUT == 1
   printf("<br>");
 #endif
@@ -202,7 +202,7 @@ int run_verbose_compression_test(buffer_element_t *data_ptr, array_size_t data_s
 #if MARKDOWN_OUTPUT == 1
   printf("<br>");
 #endif
-  print_array(decompressed_data_ptr, main_data_size);
+  print_array(decompressed_data_ptr, main_data_size, GET_VAR_NAME(decompressed_data_ptr));
 #if MARKDOWN_OUTPUT == 1
   printf("<br>");
 #endif
@@ -228,13 +228,13 @@ uint8_t input_data_ptr[INPUT_SIZE] =
 void main(void)
 {
   // debug
-  (void)regression_test(test_arrays[2], array_sizes[2]);
+  //(void)regression_test(test_arrays[2], array_sizes[2]);
   // end debug
 
   //(void)run_verbose_compression_test(input_data_ptr, 63);
   for (uint8_t i = 0; i < NUM_TESTS; i++)
   {
-    printf("test: %d\n", i);
+    printf("\n\ntest: %d\n", i);
     if (regression_test(test_arrays[i], array_sizes[i]) != PASS)
       return;
   }

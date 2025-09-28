@@ -56,6 +56,8 @@ cmprss_token_t getMatchLen(buffer_element_t *data_ptr, array_size_t i, array_siz
           token1.after++;
           token1.after = token1.after | NIBBLE_NON_MATCH_BIT;
         }
+        if (data_ptr[i + j] == ERASED_BYTE)
+          break;
       }
     }
   }
@@ -124,8 +126,8 @@ void read_into_buffer(buffer_element_t *readBuff, array_size_t *buffReadIndex, b
   if (*buffReadIndex > 0)
   {
     memmove(&readBuff[0], &readBuff[*buffReadIndex], BUFFER_SIZE - *buffReadIndex);
-    readBytes = BUFFER_SIZE - *buffReadIndex;
     *buffReadIndex = BUFFER_SIZE - *buffReadIndex;
+    readBytes = BUFFER_SIZE - *buffReadIndex;
   }
   else
   {
@@ -134,11 +136,22 @@ void read_into_buffer(buffer_element_t *readBuff, array_size_t *buffReadIndex, b
   }
 
   if ((*readIndex + readBytes) >= data_size)
+  {
+    memset(&readBuff[*buffReadIndex + (data_size - *readIndex)], ERASED_BYTE, BUFFER_SIZE - *buffReadIndex + (data_size - *readIndex));
     readBytes = data_size - *readIndex;
+  }
 
-  // read data into next buffer so that we can always overwrite a few bytes in the main array if we need to
-  memmove(&readBuff[*buffReadIndex], &data_ptr[*readIndex], readBytes);
-  *readIndex += readBytes;
+  if (*readIndex < data_size)
+  {
+    // read data into next buffer so that we can always overwrite a few bytes in the main array if we need to
+    memmove(&readBuff[*buffReadIndex], &data_ptr[*readIndex], readBytes);
+    *readIndex += readBytes;
+  }
+  else
+  {
+    memset(&readBuff[*buffReadIndex], ERASED_BYTE, BUFFER_SIZE - *buffReadIndex);
+  }
+  *buffReadIndex = 0;
 }
 
 ret_code copy_writeBuffer_to_output(buffer_element_t *writeBuff, array_size_t *buffWriteIndex, buffer_element_t *readBuff, array_size_t *buffReadIndex, buffer_element_t *data_ptr, array_size_t data_size, array_size_t *writeIndex, array_size_t *readIndex)
@@ -180,30 +193,59 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
 
   if ((token1.before & NIBBLE_NON_MATCH_BIT) != 0)
   {
-    if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
+    if ((prevToken.after & NIBBLE_NON_MATCH_BIT) != 0)
     {
-      // to go from matched to unmatched on a non-token boundry, we need to fake a match to move the boundry to the correct spot for decoding
-      writeBuff[*buffWriteIndex++] = readBuff[*buffReadIndex++];
-      token1.before = token1.before - 1;
-      writeBuff[*buffWriteIndex++] = 0x10 + token1.before;
-    }
-    memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.before & NIBBLE_VALUE_MASK));
-    *buffWriteIndex += (token1.before & NIBBLE_VALUE_MASK);
+      // we have non-matching characters which need to be continued
+      memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.before & NIBBLE_VALUE_MASK));
+      *buffWriteIndex += (token1.before & NIBBLE_VALUE_MASK);
+      *buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
+      if ((token1.after & NIBBLE_NON_MATCH_BIT) != 0)
+      {
+        memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.after & NIBBLE_VALUE_MASK));
+        *buffWriteIndex += (token1.after & NIBBLE_VALUE_MASK);
+        *buffReadIndex += (token1.after & NIBBLE_VALUE_MASK);
+
+        if (readBuff[*buffReadIndex] == ERASED_BYTE)
+        {
+          // add end of unmatched token at the end of the file
+          token1.after = 0;
+          token1.before = NIBBLE_NON_MATCH_BIT;
+          writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
+        }
+      }
+// prevToken.byte = token1.byte;
 #ifdef DEBUG
-    print_array(writeBuff, *buffWriteIndex, GET_VAR_NAME(writeBuff));
+      print_array(writeBuff, *buffWriteIndex, GET_VAR_NAME(writeBuff));
 #endif
-    if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
-    {
-      buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
-      // TODO copy buffer to memory
-      prevToken.byte = 0x10 + token1.before;
       return;
+    }
+    else
+    {
+      if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
+      {
+        // to go from matched to unmatched on a non-token boundry, we need to fake a match to move the boundry to the correct spot for decoding
+        writeBuff[(*buffWriteIndex)++] = readBuff[*buffReadIndex++];
+        token1.before = token1.before - 1;
+        writeBuff[(*buffWriteIndex)++] = 0x10 + token1.before;
+      }
+      memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.before & NIBBLE_VALUE_MASK));
+      *buffWriteIndex += (token1.before & NIBBLE_VALUE_MASK);
+#ifdef DEBUG
+      print_array(writeBuff, *buffWriteIndex, GET_VAR_NAME(writeBuff));
+#endif
+      if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
+      {
+        buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
+        // TODO copy buffer to memory
+        prevToken.byte = 0x10 + token1.before;
+        return;
+      }
     }
   }
   else
   {
     // insert the before match value
-    writeBuff[*buffWriteIndex++] = readBuff[*buffReadIndex];
+    writeBuff[(*buffWriteIndex)++] = readBuff[*buffReadIndex];
   }
   *buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
 
@@ -212,7 +254,7 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
 #endif
 
   // insert the token
-  writeBuff[*buffWriteIndex++] = (buffer_element_t)token1.byte;
+  writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
 
   // TODO for a smaller buffer, should we copy buffer over here?
 
@@ -232,7 +274,7 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
   else
   {
     // insert the after match value
-    writeBuff[*buffWriteIndex++] = readBuff[*buffReadIndex + 1];
+    writeBuff[(*buffWriteIndex)++] = readBuff[*buffReadIndex + 1];
   }
 #ifdef DEBUG
   print_array(writeBuff, *buffWriteIndex, GET_VAR_NAME(writeBuff));
@@ -286,7 +328,7 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
     writeBuff[buffWriteIndex++] = (buffer_element_t)token1.byte;
   }
 
-  while ((readIndex < data_size) && (data_ptr[readIndex] != ERASED_BYTE))
+  do
   {
     // prevent infinite loop
     itterationCount--;
@@ -299,7 +341,7 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
 #endif // DEBUG
     fill_write_buffer_from_read_buffer(writeBuff, &buffWriteIndex, readBuff, &buffReadIndex, prevToken);
 #if DEBUG == 1
-    print_array(readBuff, BUFFER_SIZE, GET_VAR_NAME(readBuff));
+    print_array(writeBuff, BUFFER_SIZE, GET_VAR_NAME(writeBuff));
 #endif // DEBUG
     if (PASS != copy_writeBuffer_to_output(writeBuff, &buffWriteIndex, readBuff, &buffReadIndex, data_ptr, data_size, &writeIndex, &readIndex))
     {
@@ -308,9 +350,12 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
       break;
     }
 #if DEBUG == 1
-    print_array(data_ptr, data_size);
+    print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif // DEBUG
-  }
+#if DEBUG == 1
+    print_array(readBuff, BUFFER_SIZE, GET_VAR_NAME(readBuff));
+#endif // DEBUG
+  } while (readBuff[0] != ERASED_BYTE);
 
   size_after_compression = writeIndex;
 
@@ -372,18 +417,18 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
           memmove(&data_ptr[writeIndex], &data_ptr[i], ((data_size) - (i)));
 
 #ifdef DEBUG
-          print_array(data_ptr, data_size);
+          print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
           memmove(&data_ptr[writeIndex + ((data_size) - (i))], &eofBuffer[eofWriteIndex + 1], BUFFER_SIZE - (eofWriteIndex + 1));
 
 #ifdef DEBUG
-          print_array(data_ptr, data_size);
+          print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
           memset(&data_ptr[writeIndex + (BUFFER_SIZE - (eofWriteIndex + 1)) + ((data_size) - (i))], 0xFF, ((data_size) - (writeIndex + (BUFFER_SIZE - (eofWriteIndex + 1)) + ((data_size) - (i)))));
           eofWriteIndex = BUFFER_SIZE;
           i = writeIndex;
 #ifdef DEBUG
-          print_array(data_ptr, data_size);
+          print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
           buffer = ERASED_BYTE;
           continue;
@@ -429,7 +474,7 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
         buffer = ERASED_BYTE;
 // prevToken.byte = token1.byte;
 #ifdef DEBUG
-        print_array(data_ptr, data_size);
+        print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
 
         if (i >= data_size)
@@ -466,7 +511,7 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
       memmove(&data_ptr[writeIndex], &data_ptr[i], (token1.before & NIBBLE_VALUE_MASK));
       writeIndex = writeIndex + (token1.before & NIBBLE_VALUE_MASK);
 #ifdef DEBUG
-      print_array(data_ptr, data_size);
+      print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
       if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
       {
@@ -488,7 +533,7 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
       buffer = data_ptr[writeIndex];
     }
 #ifdef DEBUG
-    print_array(data_ptr, data_size);
+    print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
     i = i + (token1.before & NIBBLE_VALUE_MASK);
 
@@ -496,7 +541,7 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
     data_ptr[writeIndex++] = (buffer_element_t)token1.byte;
 
 #ifdef DEBUG
-    print_array(data_ptr, data_size);
+    print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
 
     if ((token1.after == 0) || (i > (data_size - 1)))
@@ -511,7 +556,7 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
           memmove(&data_ptr[writeIndex + 1], &data_ptr[writeIndex], (token1.after & NIBBLE_VALUE_MASK));
           data_ptr[writeIndex] = buffer;
 #ifdef DEBUG
-          print_array(data_ptr, data_size);
+          print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
         }
         else
@@ -521,7 +566,7 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
           memmove(&data_ptr[writeIndex + 1], &data_ptr[writeIndex], ((data_size - 1) - (writeIndex)));
           data_ptr[writeIndex] = buffer;
 #ifdef DEBUG
-          print_array(data_ptr, data_size);
+          print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
           i = i + 1;
         }
@@ -537,7 +582,7 @@ int byte_compress_old(buffer_element_t *data_ptr, array_size_t data_size)
       writeIndex = writeIndex + 1;
     }
 #ifdef DEBUG
-    print_array(data_ptr, data_size);
+    print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif
 
     i = i + (token1.after & NIBBLE_VALUE_MASK);
