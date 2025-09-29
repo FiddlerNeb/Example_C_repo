@@ -2,6 +2,7 @@
   "files.associations": {
     "*.cla": "c",
     "stdint.h": "c",
-    "assert.h": "c"
+    "assert.h": "c",
+    "compression_test.h": "c"
   }
 }

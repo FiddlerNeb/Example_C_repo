@@ -14,8 +14,9 @@ typedef enum
   INVALID = -1,
 } ret_code;
 
-#define MAX_INPUT_SIZE 256
-#define BUFFER_SIZE 16
+#define MIN_COMPRESSIBLE_FILE_PERC 97
+#define MAX_INPUT_SIZE 512
+#define BUFFER_SIZE 24
 #define TOKEN_INIT 0
 #define NIBBLE_MAX 0xF
 #define NIBBLE_NON_MATCH_BIT 0x8

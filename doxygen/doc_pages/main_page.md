@@ -1,6 +1,7 @@
 @mainpage Ben O Compression algorithm for interview 2025-09-19
 @tableofcontents
 @section Assignment Code Design Test: Data Compression Design
+
 <p>
 Design an algorithm that will compress a given data buffer of bytes. 
 <br>Please describe your design and submit an implementation in a language of your choice.
@@ -33,8 +34,9 @@ Design an algorithm that will compress a given data buffer of bytes.
 * schedule at least 50% of development time for testing & itteration
 </p>
 
- @section CompressionAnswer Compression Algorithm pseudocode
- @subsection General General description
+@section CompressionAnswer Compression Algorithm pseudocode
+@subsection General General description
+
  <p>
 Inspired by the <a href="https://lz4.org/" target="_blank">L4Z algorithm</a> I found during my research, I chose this since it balances compression speed with compression size in order to ensure throughput. Ensuring throughput would be essential for applications like BLE data transmission on an embedded device.<br>
  </p>
@@ -65,26 +67,27 @@ During testing I found poor performance when dealing with multiple un-duplicated
 If the input array starts with an unmatched sequence, we must input a token (0x8#) at the beginning to allow for our decompression strategy, see @ref DecompressionAnswer
 <br>I utilized the unused 0x8 nibble bit to indicate an unmatched sequence, the start nibble may optionally include the count of unmatched bytes but is not necesarry by design since this allows for fewer tokens for unmatched sequences longer than 7.<br>
 **Improvement:** for sequences longer than 7, add a length byte after the token<br>
-> **Basic Example data and un-duplication enhanced compression result:**<br>
-<code>
-pre compression size: 8
-original bytes:<br>
-0x02, 0x02, 0x04, 0x05, 0x07, 0x03, 0x03, 0x03<br>
-preceding matched byte count: 2<br>
-following unmatched byte count: 3<br>
-following matched byte count: 3<br>
-before unmatched token (Hex): 0x2B<br>
-after unmatched token (Hex):  0x83<br>
-after insertion into sequence:<br>
-0x02, 0x02, 0x2B, 0x04, 0x05, 0x07, 0x83, 0x03, 0x03, 0x03<br>
-after removing un-necesarry sequence bytes:<br>
-0x02, 0x2B, 0x04, 0x05, 0x07, 0x83, 0x03 <br>
-post compression size: 7
-</code>
-@subsection OverflowHandling Overflow Handling
+
+> **Basic Example data and un-duplication enhanced compression result:**<br> > <code>
+> pre compression size: 8
+> original bytes:<br>
+> 0x02, 0x02, 0x04, 0x05, 0x07, 0x03, 0x03, 0x03<br>
+> preceding matched byte count: 2<br>
+> following unmatched byte count: 3<br>
+> following matched byte count: 3<br>
+> before unmatched token (Hex): 0x2B<br>
+> after unmatched token (Hex): 0x83<br>
+> after insertion into sequence:<br>
+> 0x02, 0x02, 0x2B, 0x04, 0x05, 0x07, 0x83, 0x03, 0x03, 0x03<br>
+> after removing un-necesarry sequence bytes:<br>
+> 0x02, 0x2B, 0x04, 0x05, 0x07, 0x83, 0x03 <br>
+> post compression size: 7
+> </code>
+> @subsection OverflowHandling Overflow Handling
+
 <p>
-Since adding tokens to unmatched byte sequences results in a net gain in bytes, we need to add overlow capability to our algorithm to preserve later data in our input array. This overflow capability will unfortunately be cyclically costly as we have to create a gap in the data to insert the tokens.<br>
-**Improvement:** If I had more time, I would pull a buffer out of the beginning of the file first to make room and then proceed with the algorithm as-is.<br>
+Since adding tokens to unmatched byte sequences results in a net gain in bytes, we need to add overflow capability to our algorithm to preserve later data in our input array.<br>
+My first implementation of the algorithm would get costlier the more overflows that occurred while compressing the file. My latest implementation sets this cost at O(2n) where we copy every byte into a buffer, before copying the compressed bytes into the array. The size of this buffer must be at minimum 2x our max nibble length (14+2tokens). During testing I found that I had to expand this for files which were particularily difficult to compress due to the number of extra bytes/tokens added near the beginning of the file compared to the end.
 **Improvement:** utilize an output memory space, rather than overwritting the input buffer, this could be an input to the function<br>
 **Improvement:** dynamically allocate more memory to the array, but this is typically disabled in embedded applications.<br>
 </p>
