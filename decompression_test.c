@@ -2,7 +2,7 @@
 
 #include "compression_test.h"
 
-#define DEBUG 1
+// #define DEBUG 1
 /**
  * @brief
  *

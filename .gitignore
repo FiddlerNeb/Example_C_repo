@@ -2,3 +2,4 @@ doxygen/html/*
 doxygen/latex/*
 *.o
 *.exe
+/logs/*

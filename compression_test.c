@@ -41,7 +41,6 @@ cmprss_token_t getMatchLen(buffer_element_t *data_ptr, array_size_t i, array_siz
     }
     else
     {
-      // we should skip the first match, so we start at 2, since we don't what to include the final value in the case of a non-match length
       // find the number of consecutive non-matches after the currVal
       for (uint8_t j = 1; j < NIBBLE_NON_MATCH_BIT; j++)
       {
@@ -61,6 +60,10 @@ cmprss_token_t getMatchLen(buffer_element_t *data_ptr, array_size_t i, array_siz
       }
     }
   }
+
+  // an unmatched 1 is the same as a matched 1, so use the matched syntax since that helps our compression
+  if (token1.after == 0x9)
+    token1.after = 0x1;
 
   return token1;
 }
@@ -94,26 +97,30 @@ int estimate_array_size(buffer_element_t *data_ptr, array_size_t data_size)
 
     if ((token1.before & NIBBLE_NON_MATCH_BIT) != 0)
     {
-      cmprss_size_est = cmprss_size_est + (token1.before & NIBBLE_VALUE_MASK) + 1;
+      cmprss_size_est += (token1.before & NIBBLE_VALUE_MASK) + 1;
     }
     else
     {
-      cmprss_size_est = cmprss_size_est + 1;
+      if ((token1.before & NIBBLE_VALUE_MASK) == 1)
+        cmprss_size_est += 1;
+      cmprss_size_est += 1;
     }
-    i = i + (token1.before & NIBBLE_VALUE_MASK) + 1;
+    i += (token1.before & NIBBLE_VALUE_MASK) + 1;
 
     if ((token1.after & NIBBLE_NON_MATCH_BIT) != 0)
     {
-      cmprss_size_est = cmprss_size_est + (token1.after & NIBBLE_VALUE_MASK) + 1;
+      cmprss_size_est += (token1.after & NIBBLE_VALUE_MASK) + 1;
     }
     else
     {
-      cmprss_size_est = cmprss_size_est + 1;
+      if ((token1.after & NIBBLE_VALUE_MASK) == 1)
+        cmprss_size_est += 1;
+      cmprss_size_est += 1;
     }
-    i = i + (token1.after & NIBBLE_VALUE_MASK) + 1;
+    i += (token1.after & NIBBLE_VALUE_MASK) + 1;
 
     // for the token
-    cmprss_size_est = cmprss_size_est + 1;
+    cmprss_size_est += 1;
   }
 
   return cmprss_size_est;
@@ -137,7 +144,7 @@ void read_into_buffer(buffer_element_t *readBuff, array_size_t *buffReadIndex, b
 
   if ((*readIndex + readBytes) >= data_size)
   {
-    memset(&readBuff[*buffReadIndex + (data_size - *readIndex)], ERASED_BYTE, BUFFER_SIZE - *buffReadIndex + (data_size - *readIndex));
+    memset(&readBuff[*buffReadIndex + (data_size - *readIndex)], ERASED_BYTE, BUFFER_SIZE - (*buffReadIndex + (data_size - *readIndex)));
     readBytes = data_size - *readIndex;
   }
 
@@ -180,7 +187,7 @@ ret_code copy_writeBuffer_to_output(buffer_element_t *writeBuff, array_size_t *b
   return PASS;
 }
 
-void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_t *buffWriteIndex, buffer_element_t *readBuff, array_size_t *buffReadIndex, cmprss_token_t prevToken)
+void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_t *buffWriteIndex, buffer_element_t *readBuff, array_size_t *buffReadIndex, cmprss_token_t *prevToken)
 {
   cmprss_token_t token1;
 
@@ -189,29 +196,39 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
   token1.after = getMatchLen(readBuff, *buffReadIndex + (token1.before & NIBBLE_VALUE_MASK), BUFFER_SIZE).after;
 
   if ((token1.before == 0) && (token1.after == 0))
+  {
+    if (readBuff[*buffReadIndex] == ERASED_BYTE)
+    {
+      // add end of unmatched token at the end of the file
+      token1.after = 0;
+      token1.before = NIBBLE_NON_MATCH_BIT;
+      writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
+    }
     return;
+  }
 
   if ((token1.before & NIBBLE_NON_MATCH_BIT) != 0)
   {
-    if ((prevToken.after & NIBBLE_NON_MATCH_BIT) != 0)
+    if (((*prevToken).after & NIBBLE_NON_MATCH_BIT) != 0)
     {
       // we have non-matching characters which need to be continued
       memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.before & NIBBLE_VALUE_MASK));
       *buffWriteIndex += (token1.before & NIBBLE_VALUE_MASK);
       *buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
+
       if ((token1.after & NIBBLE_NON_MATCH_BIT) != 0)
       {
         memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.after & NIBBLE_VALUE_MASK));
         *buffWriteIndex += (token1.after & NIBBLE_VALUE_MASK);
         *buffReadIndex += (token1.after & NIBBLE_VALUE_MASK);
+      }
 
-        if (readBuff[*buffReadIndex] == ERASED_BYTE)
-        {
-          // add end of unmatched token at the end of the file
-          token1.after = 0;
-          token1.before = NIBBLE_NON_MATCH_BIT;
-          writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
-        }
+      if (readBuff[*buffReadIndex] == ERASED_BYTE)
+      {
+        // add end of unmatched token at the end of the file
+        token1.after = 0;
+        token1.before = NIBBLE_NON_MATCH_BIT;
+        writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
       }
 // prevToken.byte = token1.byte;
 #ifdef DEBUG
@@ -221,11 +238,11 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
     }
     else
     {
-      if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
+      if (((*prevToken).after & NIBBLE_NON_MATCH_BIT) == 0)
       {
         // to go from matched to unmatched on a non-token boundry, we need to fake a match to move the boundry to the correct spot for decoding
-        writeBuff[(*buffWriteIndex)++] = readBuff[*buffReadIndex++];
-        token1.before = token1.before - 1;
+        writeBuff[(*buffWriteIndex)++] = readBuff[(*buffReadIndex)++];
+        token1.before -= 1;
         writeBuff[(*buffWriteIndex)++] = 0x10 + token1.before;
       }
       memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.before & NIBBLE_VALUE_MASK));
@@ -233,19 +250,34 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
 #ifdef DEBUG
       print_array(writeBuff, *buffWriteIndex, GET_VAR_NAME(writeBuff));
 #endif
-      if ((prevToken.after & NIBBLE_NON_MATCH_BIT) == 0)
+      if (((*prevToken).after & NIBBLE_NON_MATCH_BIT) == 0)
       {
-        buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
+        *buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
         // TODO copy buffer to memory
-        prevToken.byte = 0x10 + token1.before;
+        (*prevToken).byte = 0x10 + token1.before;
         return;
       }
     }
   }
   else
   {
+    if (((*prevToken).after & NIBBLE_NON_MATCH_BIT) != 0)
+    {
+      // add end of unmatched token at the end of the file
+      token1.after = token1.before;
+      token1.before = NIBBLE_NON_MATCH_BIT;
+      writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
+    }
+
     // insert the before match value
     writeBuff[(*buffWriteIndex)++] = readBuff[*buffReadIndex];
+
+    if (((*prevToken).after & NIBBLE_NON_MATCH_BIT) != 0)
+    {
+      (*prevToken).byte = token1.byte;
+      *buffReadIndex += (token1.after & NIBBLE_VALUE_MASK);
+      return;
+    }
   }
   *buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
 
@@ -270,20 +302,28 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
   {
     memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.after & NIBBLE_VALUE_MASK));
     *buffWriteIndex += (token1.after & NIBBLE_VALUE_MASK);
+    *buffReadIndex += (token1.after & NIBBLE_VALUE_MASK);
+    if (readBuff[*buffReadIndex] == ERASED_BYTE)
+    {
+      // add end of unmatched token at the end of the file
+      token1.after = 0;
+      token1.before = NIBBLE_NON_MATCH_BIT;
+      writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
+    }
   }
   else
   {
     // insert the after match value
-    writeBuff[(*buffWriteIndex)++] = readBuff[*buffReadIndex + 1];
+    writeBuff[(*buffWriteIndex)++] = readBuff[*buffReadIndex];
+    *buffReadIndex += (token1.after & NIBBLE_VALUE_MASK);
   }
 #ifdef DEBUG
   print_array(writeBuff, *buffWriteIndex, GET_VAR_NAME(writeBuff));
 #endif
 
-  *buffReadIndex += (token1.after & NIBBLE_VALUE_MASK);
+  (*prevToken).byte = token1.byte;
 }
 
-#define DEBUG 1
 /**
  * @brief compresses a byte array of data using a custom algorithm
  *
@@ -293,7 +333,7 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
  */
 int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
 {
-  array_size_t size_after_compression = 0;
+  array_size_t size_after_compression = 0, est_size = 0;
   array_size_t readIndex = 0;
   array_size_t writeIndex = 0, buffWriteIndex = 0, buffReadIndex = 0;
   cmprss_token_t token1, prevToken;
@@ -307,7 +347,8 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
   memset(readBuff, ERASED_BYTE, BUFFER_SIZE);
   uint64_t itterationCount = data_size * 2;
 
-  if (estimate_array_size(data_ptr, data_size) >= data_size)
+  est_size = estimate_array_size(data_ptr, data_size);
+  if (est_size >= (data_size - 1))
   {
     // likely uncompressible via this method, abort
     return data_size;
@@ -317,7 +358,7 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
   print_array(data_ptr, data_size, GET_VAR_NAME(data_ptr));
 #endif // DEBUG
 
-  token1.before = getMatchLen(readBuff, buffReadIndex, BUFFER_SIZE).after;
+  token1.before = getMatchLen(data_ptr, 0, data_size).after;
 
   // if we start off with a non matched streak, we need to put in a token at the beginning of the file
   if ((token1.before & NIBBLE_NON_MATCH_BIT) != 0)
@@ -326,6 +367,11 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
     token1.after = token1.before;
     token1.before = NIBBLE_NON_MATCH_BIT;
     writeBuff[buffWriteIndex++] = (buffer_element_t)token1.byte;
+    (prevToken).byte = token1.byte;
+  }
+  else
+  {
+    (prevToken).byte = TOKEN_INIT;
   }
 
   do
@@ -339,7 +385,7 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
 #if DEBUG == 1
     print_array(readBuff, BUFFER_SIZE, GET_VAR_NAME(readBuff));
 #endif // DEBUG
-    fill_write_buffer_from_read_buffer(writeBuff, &buffWriteIndex, readBuff, &buffReadIndex, prevToken);
+    fill_write_buffer_from_read_buffer(writeBuff, &buffWriteIndex, readBuff, &buffReadIndex, &prevToken);
 #if DEBUG == 1
     print_array(writeBuff, BUFFER_SIZE, GET_VAR_NAME(writeBuff));
 #endif // DEBUG

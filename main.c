@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "compression_test.h"
 #include "test_arrays.h"
@@ -115,6 +116,7 @@ ret_code regression_test(buffer_element_t *input_data_ptr, array_size_t input_si
   else
   {
     memcpy(decompressed_data_ptr, input_data_ptr, input_size);
+    printf("size %d vs est cmpress %d\n", input_size, estimate_array_size(input_data_ptr, input_size));
     printf("uncompressible, skipping\n");
   }
 
@@ -133,7 +135,83 @@ ret_code regression_test(buffer_element_t *input_data_ptr, array_size_t input_si
   return PASS;
 }
 
-int run_verbose_compression_test(buffer_element_t *data_ptr, array_size_t data_size)
+ret_code fill_array_randomly_and_randomize_size(buffer_element_t *data_ptr, array_size_t *data_size, array_size_t match_max_length, array_size_t max_length)
+{
+  buffer_element_t val = ERASED_BYTE;
+  array_size_t length = 0;
+  uint8_t matched;
+
+  if (match_max_length > MAX_INPUT_SIZE)
+    match_max_length = MAX_INPUT_SIZE;
+
+  if (max_length > MAX_INPUT_SIZE)
+    max_length = MAX_INPUT_SIZE;
+
+  for (array_size_t i = 0; i < MAX_INPUT_SIZE; i += length)
+  {
+    // random length of matched/unmatched sequence
+    length = rand() % match_max_length;
+
+    if ((length + i) > MAX_INPUT_SIZE)
+      length = MAX_INPUT_SIZE - i;
+
+    // random choise of unmatched matched
+    matched = rand() % 2;
+
+    if (matched)
+    {
+      //  random int between 0 and MAX_NON_TOKEN_DATA
+      val = rand() % MAX_NON_TOKEN_DATA;
+
+      memset(&data_ptr[i], val, length);
+    }
+    else
+    {
+      for (array_size_t j = 0; j < length; j++)
+      {
+        //  random int between 0 and MAX_NON_TOKEN_DATA
+        val = rand() % MAX_NON_TOKEN_DATA;
+        memset(&data_ptr[i + j], val, 1);
+      }
+    }
+  }
+
+  // random length to trim array
+  *data_size = rand() % max_length;
+
+  print_array(data_ptr, *data_size, GET_VAR_NAME(data_ptr));
+  return PASS;
+}
+
+ret_code run_random_tests(array_size_t num_tests, array_size_t match_max_length, array_size_t max_length)
+{
+  uint8_t data_ptr[MAX_INPUT_SIZE] = {0};
+  array_size_t data_size = 0;
+  clock_t start_time, end_time;
+  uint64_t time_taken = 0.0f;
+
+  for (array_size_t i = 0; i < num_tests; i++)
+  {
+    (void)fill_array_randomly_and_randomize_size(data_ptr, &data_size, match_max_length, max_length);
+
+    start_time = clock();
+    if (regression_test(data_ptr, data_size) != PASS)
+      return FAIL;
+    else
+      printf("PASS\n\n");
+    end_time = clock();
+
+    assert(CLOCKS_PER_SEC == 1000);
+    // Calculate the time difference in milliseconds
+    time_taken = (uint64_t)(end_time - start_time);
+
+    printf("Regression Test Time Taken: %dms\n", time_taken);
+  }
+
+  return PASS;
+}
+
+ret_code run_verbose_compression_test(buffer_element_t *data_ptr, array_size_t data_size)
 {
   clock_t start_time, end_time;
   uint64_t time_taken = 0.0f;
@@ -213,7 +291,10 @@ int run_verbose_compression_test(buffer_element_t *data_ptr, array_size_t data_s
   goto END;
 ERROR:
   printf("ERROR HAS OCCURRED");
+
+  return FAIL;
 END:
+  return PASS;
 }
 
 /*
@@ -228,17 +309,28 @@ uint8_t input_data_ptr[INPUT_SIZE] =
 void main(void)
 {
   // debug
-  //(void)regression_test(test_arrays[2], array_sizes[2]);
+  (void)regression_test(test_arrays[12], array_sizes[12]);
   // end debug
 
-  //(void)run_verbose_compression_test(input_data_ptr, 63);
+  // corner case tests
   for (uint8_t i = 0; i < NUM_TESTS; i++)
   {
     printf("\n\ntest: %d\n", i);
+    // if (run_verbose_compression_test(test_arrays[i], array_sizes[i]) != PASS)
     if (regression_test(test_arrays[i], array_sizes[i]) != PASS)
-      return;
+      goto ERROR;
+    else
+      printf("PASS\n", i);
   }
 
+  if (run_random_tests(100, 8, 31) != PASS)
+    goto ERROR;
+
+  goto END;
+ERROR:
+  printf("ERROR HAS OCCURRED");
+  return;
+END:
   printf("All tests Passed\n");
 
   return;
