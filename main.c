@@ -99,13 +99,16 @@ ret_code regression_test(buffer_element_t *input_data_ptr, array_size_t input_si
     }
   }
 
-  memcpy(compressed_data_ptr, input_data_ptr, input_size);
-  if (!ArraysAreEqual(input_data_ptr, compressed_data_ptr, input_size))
+  if (input_size > 0)
   {
-    print_array(input_data_ptr, input_size, GET_VAR_NAME(input_data_ptr));
-    print_array(compressed_data_ptr, input_size, GET_VAR_NAME(compressed_data_ptr));
-    printf("copy error");
-    return FAIL;
+    memcpy(compressed_data_ptr, input_data_ptr, input_size);
+    if (!ArraysAreEqual(input_data_ptr, compressed_data_ptr, input_size))
+    {
+      print_array(input_data_ptr, input_size, GET_VAR_NAME(input_data_ptr));
+      print_array(compressed_data_ptr, input_size, GET_VAR_NAME(compressed_data_ptr));
+      printf("copy error");
+      return FAIL;
+    }
   }
   main_cmprss_size = byte_compress(compressed_data_ptr, input_size);
 
@@ -120,16 +123,19 @@ ret_code regression_test(buffer_element_t *input_data_ptr, array_size_t input_si
     printf("uncompressible, skipping\n");
   }
 
-  if (!ArraysAreEqual(input_data_ptr, decompressed_data_ptr, input_size))
+  if (input_size > 0)
   {
-    print_array(input_data_ptr, input_size, GET_VAR_NAME(input_data_ptr));
-    printf("input size: %d\n", input_size);
-    print_array(compressed_data_ptr, main_cmprss_size, GET_VAR_NAME(compressed_data_ptr));
-    printf("compressed size: %d\n", main_cmprss_size);
-    print_array(decompressed_data_ptr, main_decmprss_size, GET_VAR_NAME(decompressed_data_ptr));
-    printf("decompressed size: %d\n", main_decmprss_size);
-    printf("test fail\n\n\n");
-    return FAIL;
+    if (!ArraysAreEqual(input_data_ptr, decompressed_data_ptr, input_size))
+    {
+      print_array(input_data_ptr, input_size, GET_VAR_NAME(input_data_ptr));
+      printf("input size: %d\n", input_size);
+      print_array(compressed_data_ptr, main_cmprss_size, GET_VAR_NAME(compressed_data_ptr));
+      printf("compressed size: %d\n", main_cmprss_size);
+      print_array(decompressed_data_ptr, main_decmprss_size, GET_VAR_NAME(decompressed_data_ptr));
+      printf("decompressed size: %d\n", main_decmprss_size);
+      printf("test fail\n\n\n");
+      return FAIL;
+    }
   }
 
   return PASS;
@@ -309,11 +315,11 @@ uint8_t input_data_ptr[INPUT_SIZE] =
 void main(void)
 {
   // debug
-  (void)regression_test(test_arrays[12], array_sizes[12]);
+  (void)regression_test(test_arrays[0], array_sizes[0]);
   // end debug
 
   // corner case tests
-  for (uint8_t i = 0; i < NUM_TESTS; i++)
+  for (uint8_t i = NUM_TESTS - 1; i > 0; i--)
   {
     printf("\n\ntest: %d\n", i);
     // if (run_verbose_compression_test(test_arrays[i], array_sizes[i]) != PASS)

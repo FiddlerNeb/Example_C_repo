@@ -101,11 +101,12 @@ int estimate_array_size(buffer_element_t *data_ptr, array_size_t data_size)
     }
     else
     {
-      if ((token1.before & NIBBLE_VALUE_MASK) == 1)
-        cmprss_size_est += 1;
-      cmprss_size_est += 1;
+      cmprss_size_est += 2;
     }
     i += (token1.before & NIBBLE_VALUE_MASK) + 1;
+
+    // for the token
+    cmprss_size_est += 1;
 
     if ((token1.after & NIBBLE_NON_MATCH_BIT) != 0)
     {
@@ -113,14 +114,9 @@ int estimate_array_size(buffer_element_t *data_ptr, array_size_t data_size)
     }
     else
     {
-      if ((token1.after & NIBBLE_VALUE_MASK) == 1)
-        cmprss_size_est += 1;
-      cmprss_size_est += 1;
+      cmprss_size_est += 2;
     }
     i += (token1.after & NIBBLE_VALUE_MASK) + 1;
-
-    // for the token
-    cmprss_size_est += 1;
   }
 
   return cmprss_size_est;
@@ -169,8 +165,8 @@ ret_code copy_writeBuffer_to_output(buffer_element_t *writeBuff, array_size_t *b
   }
 
   // make sure we have space to write the buffer contents
-  if ((*buffWriteIndex < (data_size - *writeIndex)) &&
-      ((*buffWriteIndex < (*writeIndex - *readIndex))))
+  if ((*buffWriteIndex <= (data_size - *writeIndex)) &&
+      ((*buffWriteIndex <= (*writeIndex - *readIndex))))
   {
     memmove(&data_ptr[*writeIndex], &writeBuff[0], *buffWriteIndex);
     *writeIndex += *buffWriteIndex;
@@ -183,6 +179,9 @@ ret_code copy_writeBuffer_to_output(buffer_element_t *writeBuff, array_size_t *b
     // we should never end up here
     return FAIL;
   }
+
+  // to assist debugging, can be removed later
+  memset(&writeBuff[0], ERASED_BYTE, BUFFER_SIZE);
 
   return PASS;
 }
@@ -197,7 +196,7 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
 
   if ((token1.before == 0) && (token1.after == 0))
   {
-    if (readBuff[*buffReadIndex] == ERASED_BYTE)
+    if ((readBuff[*buffReadIndex] == ERASED_BYTE) && (((*prevToken).after & NIBBLE_NON_MATCH_BIT) != 0))
     {
       // add end of unmatched token at the end of the file
       token1.after = 0;
@@ -206,6 +205,10 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
     }
     return;
   }
+
+  // if we only matched 1, then treat is as the last bit of unmatched sequence
+  if ((((*prevToken).after & NIBBLE_NON_MATCH_BIT) != 0) && ((token1.before) == 0x1))
+    token1.before |= NIBBLE_NON_MATCH_BIT;
 
   if ((token1.before & NIBBLE_NON_MATCH_BIT) != 0)
   {
@@ -216,20 +219,20 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
       *buffWriteIndex += (token1.before & NIBBLE_VALUE_MASK);
       *buffReadIndex += (token1.before & NIBBLE_VALUE_MASK);
 
-      if ((token1.after & NIBBLE_NON_MATCH_BIT) != 0)
+      if (((token1.after & NIBBLE_NON_MATCH_BIT) != 0) || (token1.after) == 0x1)
       {
         memmove(&writeBuff[*buffWriteIndex], &readBuff[*buffReadIndex], (token1.after & NIBBLE_VALUE_MASK));
         *buffWriteIndex += (token1.after & NIBBLE_VALUE_MASK);
         *buffReadIndex += (token1.after & NIBBLE_VALUE_MASK);
       }
-
+      /*
       if (readBuff[*buffReadIndex] == ERASED_BYTE)
       {
         // add end of unmatched token at the end of the file
         token1.after = 0;
         token1.before = NIBBLE_NON_MATCH_BIT;
         writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
-      }
+      }*/
 // prevToken.byte = token1.byte;
 #ifdef DEBUG
       print_array(writeBuff, *buffWriteIndex, GET_VAR_NAME(writeBuff));
@@ -263,7 +266,7 @@ void fill_write_buffer_from_read_buffer(buffer_element_t *writeBuff, array_size_
   {
     if (((*prevToken).after & NIBBLE_NON_MATCH_BIT) != 0)
     {
-      // add end of unmatched token at the end of the file
+      // add end of unmatched token
       token1.after = token1.before;
       token1.before = NIBBLE_NON_MATCH_BIT;
       writeBuff[(*buffWriteIndex)++] = (buffer_element_t)token1.byte;
@@ -348,7 +351,7 @@ int byte_compress(buffer_element_t *data_ptr, array_size_t data_size)
   uint64_t itterationCount = data_size * 2;
 
   est_size = estimate_array_size(data_ptr, data_size);
-  if (est_size >= (data_size - 1))
+  if ((est_size >= (data_size)) || (est_size <= 0))
   {
     // likely uncompressible via this method, abort
     return data_size;
